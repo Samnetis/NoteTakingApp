@@ -1,0 +1,12 @@
+projects:
+  notetakingapp:
+    schemaPath: src/graphql/schema.json
+    includes:
+      - src/graphql/queries.js
+    excludes:
+      - ./amplify/**
+    extensions:
+      amplify:
+        codeGenTarget: javascript
+        generatedFileName: ''
+        docsFilePath: src/graphql
