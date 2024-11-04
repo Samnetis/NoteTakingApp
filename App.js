@@ -1,47 +1,71 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Image, TouchableOpacity, Text, SafeAreaView, FlatList } from 'react-native';
-import { Amplify, Auth } from 'aws-amplify';
-import { withAuthenticator } from 'aws-amplify-react-native';
+import { StyleSheet, View, Image, TouchableOpacity, Text, SafeAreaView, FlatList, TextInput } from 'react-native';
+import { Amplify, Auth, API, graphqlOperation } from 'aws-amplify';
+import { withAuthenticator } from '@aws-amplify/ui-react-native';
 import { Camera } from 'expo-camera';
 import { FontAwesome } from '@expo/vector-icons';
-
-// Import your AWS configuration file
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as queries from './src/graphql/queries';
+import * as mutations from './src/graphql/mutations';
 import awsconfig from './src/aws-exports';
 
-Amplify.configure(awsconfig);
+Amplify.configure({
+  ...awsconfig,
+  Analytics: {
+    disabled: true,
+  },
+});
 
-function App() {
+function App({ signOut, user }) {
   const [notes, setNotes] = useState([]);
   const [hasPermission, setHasPermission] = useState(null);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
 
   useEffect(() => {
     (async () => {
       const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
     })();
+    fetchNotes();
   }, []);
 
-  const createNote = () => {
-    const newNote = {
-      id: Date.now().toString(),
-      title: 'New Note',
-      content: '',
-      createdAt: new Date().toISOString(),
-    };
-    setNotes([newNote, ...notes]);
-  };
+  async function fetchNotes() {
+    try {
+      const noteData = await API.graphql(graphqlOperation(queries.listNotes));
+      const notes = noteData.data.listNotes.items;
+      setNotes(notes);
+    } catch (err) {
+      console.log('error fetching notes');
+    }
+  }
+
+  async function createNote() {
+    if (title === '' || content === '') return;
+
+    const note = { title, content };
+    try {
+      await API.graphql(graphqlOperation(mutations.createNote, { input: note }));
+      setTitle('');
+      setContent('');
+      fetchNotes();
+    } catch (err) {
+      console.log('error creating note:', err);
+    }
+  }
+
+  async function deleteNote(id) {
+    try {
+      await API.graphql(graphqlOperation(mutations.deleteNote, { input: { id } }));
+      fetchNotes();
+    } catch (err) {
+      console.log('error deleting note:', err);
+    }
+  }
 
   const addPicture = () => {
     // This is a placeholder for the camera functionality
     console.log('Add picture functionality to be implemented');
-  };
-
-  const deleteNote = (id) => {
-    setNotes(notes.filter(note => note.id !== id));
-  };
-
-  const updateNote = (id, updatedNote) => {
-    setNotes(notes.map(note => note.id === id ? { ...note, ...updatedNote } : note));
   };
 
   const renderNote = ({ item }) => (
@@ -49,9 +73,6 @@ function App() {
       <Text style={styles.noteTitle}>{item.title}</Text>
       <Text style={styles.noteContent}>{item.content}</Text>
       <View style={styles.noteActions}>
-        <TouchableOpacity onPress={() => updateNote(item.id, { title: 'Updated Title' })}>
-          <FontAwesome name="pencil" size={20} color="#007AFF" />
-        </TouchableOpacity>
         <TouchableOpacity onPress={() => deleteNote(item.id)}>
           <FontAwesome name="trash" size={20} color="#FF3B30" />
         </TouchableOpacity>
@@ -68,10 +89,31 @@ function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Image
-        source={require('./assets/logo.png')}
-        style={styles.logo}
-      />
+      <View style={styles.header}>
+        <Image
+          source={require('./assets/logo.png')}
+          style={styles.logo}
+        />
+        <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.welcomeText}>Welcome, {user.username}!</Text>
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Note Title"
+        />
+        <TextInput
+          style={styles.input}
+          value={content}
+          onChangeText={setContent}
+          placeholder="Note Content"
+          multiline
+        />
+      </View>
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={createNote}>
           <FontAwesome name="plus" size={24} color="white" />
@@ -99,12 +141,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
-  logo: {
-    width: 200,
-    height: 100,
-    resizeMode: 'contain',
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 20,
     marginTop: 50,
-    marginBottom: 30,
+    marginBottom: 20,
+  },
+  logo: {
+    width: 150,
+    height: 75,
+    resizeMode: 'contain',
+  },
+  signOutButton: {
+    backgroundColor: '#FF3B30',
+    padding: 10,
+    borderRadius: 5,
+  },
+  signOutButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  welcomeText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  inputContainer: {
+    width: '90%',
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: 'white',
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 10,
   },
   buttonContainer: {
     flexDirection: 'row',
